@@ -2,8 +2,7 @@ import streamlit as st
 from data.fetch import get_transactions, get_deposits_divs
 from data.history_logic import get_historic
 from data.portfolio import calculate_portfolio, calculate_cash, calculate_div
-from visualizations.charts import show_allocation_chart, show_graph_deposits, show_graph_div, show_portfolio,\
-    show_graph_development
+from visualizations.charts import show_allocation_chart, show_graph_deposits, show_graph_div, show_portfolio, show_graph_development
 from data.submit import submit_transaction_form, submit_deposits_divs_form
 
 
