@@ -1,46 +1,62 @@
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 import pandas as pd
 import altair as alt
+import math
 
 
-def show_portfolio(portfolio_df):
-    def background_day_change(val):
-        if pd.isna(val):
-            return ""
-        try:
-            val = float(val)
-        except:
-            return ""
+def show_portfolio(portfolio_df, currency_symbol="€", columns_per_row=4):
+    st.subheader("📊 Portfolio Metrics")
+    rows = math.ceil(len(portfolio_df) / columns_per_row)
+    for i in range(rows):
+        cols = st.columns(columns_per_row)
+        for j in range(columns_per_row):
+            idx = i * columns_per_row + j
+            if idx >= len(portfolio_df):
+                break
 
-        # Scale color intensity: 0–5% = 0–1 alpha (capped)
-        alpha = min(abs(val), 5) / 5
-        if val > 0:
-            color = f"rgba(0, 255, 0, {alpha})"  # green background
-        elif val < 0:
-            color = f"rgba(255, 0, 0, {alpha})"  # red background
-        else:
-            color = "rgba(255, 255, 255, 0)"  # neutral
-        return f"background-color: {color}"
+            row = portfolio_df.iloc[idx]
+            ticker = row.get("Ticker", "")
+            value = row.get("Value (€)", 0.0)
+            change = row.get("% Change (1d)", None)
 
-    # st.dataframe(portfolio_df, use_container_width=True)
-    st.dataframe(
-        portfolio_df.style.applymap(background_day_change, subset=["% Change (1d)"]),
-        use_container_width=True
-    )
+            delta = f"{round(change, 2)}%" if pd.notna(change) else "n/a"
+
+            # HTML display for better control over font sizes
+            html = f"""
+             <div style="text-align:center; padding:8px">
+                 <div style="font-size:20px; font-weight:bold">{ticker}</div>
+                 <div style="font-size:14px; color:gray">{currency_symbol}{round(value, 2):,.2f}</div>
+                 <div style="color:{'green' if change and change > 0 else 'red' if change and change < 0 else 'black'};
+                             font-weight:bold;">
+                     {delta}
+                 </div>
+             </div>
+             """
+            cols[j].markdown(html, unsafe_allow_html=True)
 
 
 def show_allocation_chart(portfolio_df):
-    if not portfolio_df.empty:
-        fig = px.pie(
-            portfolio_df,
-            values="Value (€)",
-            names="Ticker",
-            title="Portfolio Allocation by Ticker",
-            hole=0.3
-        )
-        st.plotly_chart(fig, use_container_width=True)
+    if portfolio_df.empty:
+        st.info("No portfolio data available.")
+        return
 
+    # Ensure 'Type' column exists
+    if "type" not in portfolio_df.columns:
+        st.warning("Column 'type' (Equity or ETF) is missing from the portfolio dataframe.")
+        return
+
+    # Sunburst for hierarchy: Type > Ticker
+    fig = px.sunburst(
+        portfolio_df,
+        path=["type", "Ticker"],
+        values="Value (€)",
+        title="Portfolio Allocation by Type and Ticker",
+    )
+    fig.update_traces(textinfo="label+percent entry")
+
+    st.plotly_chart(fig, use_container_width=True)
 
 def show_graph_deposits(cash_df):
     # Base chart (shared X)
@@ -130,3 +146,101 @@ def show_graph_div(div_df):
     )
 
     st.altair_chart(final_chart, use_container_width=True)
+
+
+def show_graph_development(history, cash_div):
+    df_cash_sorted = cash_div[cash_div["date"] >= history["date"].min()]
+
+    def rebase(series):
+        return series / series.iloc[0] * 100 if not series.empty else series
+
+    fig = go.Figure()
+
+    # Portfolio Value
+    fig.add_trace(go.Scatter(
+        x=history["date"], y=history["value"],
+        mode="lines", name="Portfolio (€)",
+        line=dict(width=2)
+    ))
+
+    # Profit (W/V)
+    fig.add_trace(go.Scatter(
+        x=history["date"], y=history["wv"],
+        mode="lines", name="Profit (W/V)",
+        line=dict(width=2, dash="dot")
+    ))
+
+    # AEX
+    fig.add_trace(go.Scatter(
+        x=history["date"], y=history["aex"],
+        mode="lines", name="AEX",
+        line=dict(width=1)
+    ))
+
+    # S&P
+    fig.add_trace(go.Scatter(
+        x=history["date"], y=history["sp"],
+        mode="lines", name="S&P 500",
+        line=dict(width=1, dash="dash")
+    ))
+
+    # Cumulative Deposits
+    fig.add_trace(go.Scatter(
+        x=cash_div["date"], y=cash_div["cumulative_total"],
+        mode="lines", name="Deposits (€)",
+        line=dict(width=1, dash="dot")
+    ))
+
+    fig.update_layout(
+        title="📈 Historic Portfolio Overview",
+        xaxis_title="Date",
+        yaxis_title="EUR / Index Value",
+        hovermode="x unified",
+        height=600)
+
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Now make an indexed plot
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Scatter(
+        x=history["date"], y=rebase(history["value"]),
+        mode="lines", name="Portfolio Indexed",
+        line=dict(width=2)
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=history["date"], y=rebase(history["wv"]),
+        mode="lines", name="Profit (W/V) Indexed",
+        line=dict(width=2, dash="dot")
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=history["date"], y=rebase(history["aex"]),
+        mode="lines", name="AEX Indexed",
+        line=dict(width=1)
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=history["date"], y=rebase(history["sp"]),
+        mode="lines", name="S&P 500 Indexed",
+        line=dict(width=1, dash="dash")
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=df_cash_sorted["date"], y=rebase(df_cash_sorted["cumulative_total"]),
+        mode="lines", name="Deposits Indexed",
+        line=dict(width=1, dash="dot")
+    ))
+
+    fig.update_layout(
+        title="📊 Indexed Performance (rebased to 100)",
+        xaxis_title="Date",
+        yaxis_title="Index Value (Start = 100)",
+        hovermode="x unified",
+        height=600
+    )
+    print('success')
+
+    st.plotly_chart(fig, use_container_width=True)

@@ -18,8 +18,9 @@ def calculate_portfolio(df):
         if quantity == 0:
             continue
 
-        price_today, currency = get_price_and_currency(ticker)
+        price_today, currency, quote_type = get_price_and_currency(ticker)
         price_check, price_yesterday = get_yesterday_price(ticker)
+
 
         fx = get_fx_to_eur(currency) if currency else 1.0
         value_native = round(price_today * quantity, 2) if price_today else 0
@@ -38,7 +39,8 @@ def calculate_portfolio(df):
             "Currency": currency,
             "FX to EUR": fx,
             "Value (€)": value_eur,
-            "% Change (1d)": pct_change
+            "% Change (1d)": pct_change,
+            "type": quote_type
         })
 
     df_result = pd.DataFrame(result).sort_values(by="Value (€)", ascending=False)

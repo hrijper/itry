@@ -24,9 +24,10 @@ def get_price_and_currency(ticker):
         currency = info.get("currency", "EUR")
         data = yf_ticker.history(period="1d")
         price = round(data["Close"].iloc[-1], 2)
-        return price, currency
+        quote_type = info.get("quoteType")
+        return price, currency, quote_type
     except:
-        return None, None
+        return None, None, None
 
 
 @st.cache_data(ttl=3600)

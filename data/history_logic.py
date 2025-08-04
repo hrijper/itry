@@ -94,13 +94,13 @@ def calculate_portfolio_value_on_date(transactions_df, date):
             if fx_rate is None:
                 print(f"❌ No FX rate for {currency}, skipping {ticker}")
                 continue
+            # print(str(ticker) + ' amount ' + str(amount) + ' and value = ' + str(price * amount * fx_rate))
             total_value_eur += price * amount * fx_rate
         except Exception as e:
             print(f"⚠️ Error with {ticker}: {e}")
             continue
 
     return round(total_value_eur, 2)
-
 
 
 def calculate_net_deposit_up_to(cashflows_df,date):
