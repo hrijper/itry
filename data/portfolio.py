@@ -1,5 +1,5 @@
 import pandas as pd
-from data.fetch import get_price_and_currency, get_fx_to_eur
+from data.fetch import get_price_and_currency, get_fx_to_eur, get_yesterday_price
 
 
 def calculate_portfolio(df):
@@ -18,23 +18,31 @@ def calculate_portfolio(df):
         if quantity == 0:
             continue
 
-        price, currency = get_price_and_currency(ticker)
+        price_today, currency = get_price_and_currency(ticker)
+        price_check, price_yesterday = get_yesterday_price(ticker)
+
         fx = get_fx_to_eur(currency) if currency else 1.0
-        value_native = round(price * quantity, 2) if price else 0
+        value_native = round(price_today * quantity, 2) if price_today else 0
         value_eur = round(value_native * fx, 2) if fx else 0
         total_eur += value_eur
+
+        # Calculate % change vs yesterday
+        pct_change = None
+        if price_check is not None and price_yesterday not in [None, 0] and price_check != price_yesterday:
+            pct_change = round(((price_check - price_yesterday) / price_yesterday) * 100, 2)
 
         result.append({
             "Ticker": ticker,
             "Quantity": quantity,
-            "Price": price,
+            "Price": price_today,
             "Currency": currency,
             "FX to EUR": fx,
-            "Value (€)": value_eur
+            "Value (€)": value_eur,
+            "% Change (1d)": pct_change
         })
 
     df_result = pd.DataFrame(result).sort_values(by="Value (€)", ascending=False)
-    return df_result, round(total_eur, 2)
+    return df_result, round(total_eur, 0)
 
 
 def calculate_cash(df):
@@ -47,6 +55,7 @@ def calculate_cash(df):
 
     cash_df["cumulative_total"] = cash_df["signed_amount"].cumsum()
     return cash_df
+
 
 def calculate_div(df):
     div_df = df[df["type"].isin(["Dividend Gross", "Dividend Tax"])].copy()

@@ -4,6 +4,31 @@ import pandas as pd
 import altair as alt
 
 
+def show_portfolio(portfolio_df):
+    def background_day_change(val):
+        if pd.isna(val):
+            return ""
+        try:
+            val = float(val)
+        except:
+            return ""
+
+        # Scale color intensity: 0–5% = 0–1 alpha (capped)
+        alpha = min(abs(val), 5) / 5
+        if val > 0:
+            color = f"rgba(0, 255, 0, {alpha})"  # green background
+        elif val < 0:
+            color = f"rgba(255, 0, 0, {alpha})"  # red background
+        else:
+            color = "rgba(255, 255, 255, 0)"  # neutral
+        return f"background-color: {color}"
+
+    # st.dataframe(portfolio_df, use_container_width=True)
+    st.dataframe(
+        portfolio_df.style.applymap(background_day_change, subset=["% Change (1d)"]),
+        use_container_width=True
+    )
+
 
 def show_allocation_chart(portfolio_df):
     if not portfolio_df.empty:
