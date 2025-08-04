@@ -35,8 +35,12 @@ else:
     dividends = calculate_div(df_div)
 
     # Start dashboard
-    show_portfolio(portfolio_df)
-    st.metric("Total Portfolio Value (€)", f"€{total_value}")
+    portfolio_change = show_portfolio(portfolio_df)
+    st.metric(
+        label="Total Portfolio Value",
+        value=f"€{total_value:,.2f}",
+        delta=f"{round(portfolio_change, 2)}%"
+    )
 
     # Plot
     show_allocation_chart(portfolio_df)

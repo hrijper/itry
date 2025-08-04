@@ -21,7 +21,6 @@ def calculate_portfolio(df):
         price_today, currency, quote_type = get_price_and_currency(ticker)
         price_check, price_yesterday = get_yesterday_price(ticker)
 
-
         fx = get_fx_to_eur(currency) if currency else 1.0
         value_native = round(price_today * quantity, 2) if price_today else 0
         value_eur = round(value_native * fx, 2) if fx else 0

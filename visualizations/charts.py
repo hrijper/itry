@@ -7,40 +7,62 @@ import math
 
 
 def show_portfolio(portfolio_df, currency_symbol="€", columns_per_row=4):
-    st.subheader("📊 Portfolio Metrics")
-    rows = math.ceil(len(portfolio_df) / columns_per_row)
-    for i in range(rows):
-        cols = st.columns(columns_per_row)
-        for j in range(columns_per_row):
-            idx = i * columns_per_row + j
-            if idx >= len(portfolio_df):
-                break
+    st.subheader("📊 Portfolio Overview")
 
-            row = portfolio_df.iloc[idx]
-            ticker = row.get("Ticker", "")
-            value = row.get("Value (€)", 0.0)
-            change = row.get("% Change (1d)", None)
+    # --- Calculate weighted change ---
+    valid = portfolio_df[portfolio_df["% Change (1d)"].notna()]
+    total_value = valid["Value (€)"].sum()
+    if total_value > 0:
+        weighted_changes = (valid["Value (€)"] * valid["% Change (1d)"]) / total_value
+        weighted_change = weighted_changes.sum()
+    else:
+        weighted_change = 0.0
 
-            delta = f"{round(change, 2)}%" if pd.notna(change) else "n/a"
+    # --- Show grouped metrics ---
+    for group in ["EQUITY", "ETF"]:
+        group_df = portfolio_df[portfolio_df["type"] == group]
 
-            # HTML display for better control over font sizes
-            html = f"""
-             <div style="text-align:center; padding:8px">
-                 <div style="font-size:20px; font-weight:bold">{ticker}</div>
-                 <div style="font-size:14px; color:gray">{currency_symbol}{round(value, 2):,.2f}</div>
-                 <div style="color:{'green' if change and change > 0 else 'red' if change and change < 0 else 'black'};
-                             font-weight:bold;">
-                     {delta}
-                 </div>
-             </div>
-             """
-            cols[j].markdown(html, unsafe_allow_html=True)
+        if group_df.empty:
+            continue
+
+        st.markdown(f"### {group}s")
+        rows = math.ceil(len(group_df) / columns_per_row)
+        for i in range(rows):
+            cols = st.columns(columns_per_row)
+            for j in range(columns_per_row):
+                idx = i * columns_per_row + j
+                if idx >= len(group_df):
+                    break
+
+                row = group_df.iloc[idx]
+                ticker = row.get("Ticker", "")
+                value = row.get("Value (€)", 0.0)
+                change = row.get("% Change (1d)", None)
+
+                delta = f"{round(change, 2)}%" if pd.notna(change) else "n/a"
+                delta_color = "green" if change and change > 0 else "red" if change and change < 0 else "gray"
+
+                html = f"""
+                <div style="text-align: center; padding: 6px; border: 1px solid #e0e0e0; border-radius: 8px;">
+                    <div style="font-size: 18px; font-weight: 600;">{ticker}</div>
+                    <div style="font-size: 13px; color: #666;">{currency_symbol}{round(value, 2):,.2f}</div>
+                    <div style="font-size: 14px; font-weight: bold; color: {delta_color};">
+                        {delta}
+                    </div>
+                </div>
+                """
+                cols[j].markdown(html, unsafe_allow_html=True)
+
+    return round(weighted_change, 2)
 
 
 def show_allocation_chart(portfolio_df):
     if portfolio_df.empty:
         st.info("No portfolio data available.")
         return
+
+    # Drop rows where type is None or NaN
+    portfolio_df = portfolio_df[portfolio_df["type"].notna()]
 
     # Ensure 'Type' column exists
     if "type" not in portfolio_df.columns:
@@ -57,6 +79,7 @@ def show_allocation_chart(portfolio_df):
     fig.update_traces(textinfo="label+percent entry")
 
     st.plotly_chart(fig, use_container_width=True)
+
 
 def show_graph_deposits(cash_df):
     # Base chart (shared X)
