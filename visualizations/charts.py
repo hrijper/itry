@@ -61,15 +61,20 @@ def show_allocation_chart(portfolio_df):
         st.info("No portfolio data available.")
         return
 
-    # Drop rows where type is None or NaN
-    portfolio_df = portfolio_df[portfolio_df["type"].notna()]
+    # Drop rows with missing type, Ticker, or Value (€)
+    required_cols = ["type", "Ticker", "Value (€)"]
+    portfolio_df = portfolio_df.dropna(subset=required_cols)
 
-    # Ensure 'Type' column exists
-    if "type" not in portfolio_df.columns:
-        st.warning("Column 'type' (Equity or ETF) is missing from the portfolio dataframe.")
+    # Ensure correct data types
+    portfolio_df["type"] = portfolio_df["type"].astype(str)
+    portfolio_df["Ticker"] = portfolio_df["Ticker"].astype(str)
+    portfolio_df["Value (€)"] = pd.to_numeric(portfolio_df["Value (€)"], errors="coerce")
+    portfolio_df = portfolio_df[portfolio_df["Value (€)"].notnull() & (portfolio_df["Value (€)"] > 0)]
+
+    if portfolio_df.empty:
+        st.info("No valid portfolio entries with defined type and value.")
         return
 
-    # Sunburst for hierarchy: Type > Ticker
     fig = px.sunburst(
         portfolio_df,
         path=["type", "Ticker"],
