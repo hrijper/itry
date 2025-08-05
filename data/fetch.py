@@ -22,11 +22,14 @@ def get_price_and_currency(ticker):
         yf_ticker = yf.Ticker(ticker)
         info = yf_ticker.info
         currency = info.get("currency", "EUR")
-        data = yf_ticker.history(period="1d")
-        price = round(data["Close"].iloc[-1], 2)
-        quote_type = info.get("quoteType")
+        quote_type = info.get("quoteType", "Equity")  # Default to Equity
+        hist = yf_ticker.history(period="1d")
+        if hist.empty:
+            return None, None, None
+        price = round(hist["Close"].iloc[-1], 2)
         return price, currency, quote_type
-    except:
+    except Exception as e:
+        print(f"⚠️ get_price_and_currency error for {ticker}: {e}")
         return None, None, None
 
 

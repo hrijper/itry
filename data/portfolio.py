@@ -31,6 +31,8 @@ def calculate_portfolio(df):
         if price_check is not None and price_yesterday not in [None, 0] and price_check != price_yesterday:
             pct_change = round(((price_check - price_yesterday) / price_yesterday) * 100, 2)
 
+        print(f"Ticker: {ticker}, Quantity: {quantity}, Price: {price_today}, Currency: {currency}, Type: {quote_type}")
+
         result.append({
             "Ticker": ticker,
             "Quantity": quantity,
