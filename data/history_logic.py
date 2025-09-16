@@ -20,20 +20,38 @@ def get_historic(df, df_div):
     missing_days = pd.date_range(start=start_date, end=end_date, freq="B")  # B = business days
 
     new_records = []
+
+    # 1) Get last known AEX/SP from the table to seed forward-fill
+    seed = supabase.table("historic_data").select("aex, sp").order("date", desc=True).limit(1).execute().data
+    last_aex = seed[0]["aex"] if seed and seed[0].get("aex") is not None else None
+    last_sp = seed[0]["sp"] if seed and seed[0].get("sp") is not None else None
+
+    records = []
     for day in missing_days:
         value = calculate_portfolio_value_on_date(df, day)
         deposits = calculate_net_deposit_up_to(df_div, day)
         wv = round(value - deposits, 2)
 
-        aex = fetch_index_value("^AEX", day)
-        sp500 = fetch_index_value("^GSPC", day)
+        aex_val = fetch_index_value("^AEX", day)
+        sp_val = fetch_index_value("^GSPC", day)
 
-        new_records.append({
+        # Forward-fill within the loop
+        if aex_val is None:
+            aex_val = last_aex
+        else:
+            last_aex = aex_val
+
+        if sp_val is None:
+            sp_val = last_sp
+        else:
+            last_sp = sp_val
+
+        records.append({
             "date": day.strftime("%Y-%m-%d"),
             "value": round(value, 2),
             "wv": wv,
-            "aex": aex.iloc[0],
-            "sp": sp500.iloc[0]
+            "aex": aex_val,  # may still be None if we have no seed yet
+            "sp": sp_val
         })
 
     if new_records:

@@ -70,11 +70,20 @@ def get_benchmark(name):
         return pd.Series()
 
 
-def fetch_index_value(ticker, date):
+def fetch_index_value(symbol: str, day: pd.Timestamp) -> float | None:
+    """Return the last available close <= day as a float, else None."""
+    start = pd.to_datetime(day) - pd.Timedelta(days=7)  # small window to tolerate holidays
+    end   = pd.to_datetime(day) + pd.Timedelta(days=1)  # yfinance end is exclusive
     try:
-        data = yf.download(ticker, start=date, end=date + timedelta(days=1), progress=False)
-        return round(data["Close"].iloc[0], 2) if not data.empty else None
-    except:
+        hist = yf.Ticker(symbol).history(start=start, end=end, auto_adjust=False)
+        if hist.empty or "Close" not in hist:
+            return None
+        # take last close at or before 'day'
+        s = hist["Close"].loc[:pd.to_datetime(day)]
+        if s.empty:
+            return None
+        return float(s.iloc[-1])
+    except Exception:
         return None
 
 

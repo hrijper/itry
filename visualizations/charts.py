@@ -5,6 +5,27 @@ import pandas as pd
 import altair as alt
 import math
 
+def _rebase_per_year(values: pd.Series, dates: pd.Series) -> pd.Series:
+    # Make a datetime-indexed series
+    s = pd.Series(pd.to_numeric(values, errors="coerce").values,
+                  index=pd.to_datetime(dates).tz_localize(None)).sort_index()
+
+    # Rebase within each calendar year
+    out_parts = []
+    for year, seg in s.groupby(s.index.year):
+        seg = seg.copy()
+        # first valid value in the year
+        first_valid = seg.first_valid_index()
+        if first_valid is None:
+            out_parts.append(seg)
+            continue
+        base = seg.loc[first_valid]
+        if pd.notna(base) and base != 0:
+            seg = seg / base * 100.0
+        out_parts.append(seg)
+    out = pd.concat(out_parts).sort_index()
+    # Align to original order of dates
+    return out.reindex(s.index)
 
 def show_portfolio(portfolio_df, currency_symbol="€", columns_per_row=4):
     st.subheader("📊 Portfolio Overview")
@@ -176,99 +197,118 @@ def show_graph_div(div_df):
     st.altair_chart(final_chart, use_container_width=True)
 
 
-def show_graph_development(history, cash_div):
-    df_cash_sorted = cash_div[cash_div["date"] >= history["date"].min()]
+import pandas as pd
+import plotly.graph_objects as go
+import streamlit as st
 
-    def rebase(series):
-        return series / series.iloc[0] * 100 if not series.empty else series
+def _to_naive_series(s):
+    """Coerce to datetime Series (tz-naive), sorted, with NaT rows dropped."""
+    if s is None or len(s) == 0:
+        return pd.Series([], dtype="datetime64[ns]")
+    out = pd.to_datetime(s, errors="coerce")
+    # If it's already dtype datetime64[ns, tz], remove tz; for plain datetime64, .dt works too
+    if hasattr(out, "dt"):
+        try:
+            out = out.dt.tz_localize(None)
+        except (TypeError, AttributeError):
+            # already tz-naive or not tz-aware
+            pass
+    out = out.dropna()
+    return out
+
+def _rebase_per_year(values: pd.Series, dates: pd.Series) -> pd.Series:
+    s_dates = _to_naive_series(dates)
+    if s_dates.empty:
+        return pd.Series([], dtype=float)
+    s_vals = pd.to_numeric(values, errors="coerce")
+    s = pd.Series(s_vals.values, index=s_dates).sort_index()
+
+    parts = []
+    for _, seg in s.groupby(s.index.year):
+        seg = seg.copy()
+        first_valid = seg.first_valid_index()
+        if first_valid is not None:
+            base = seg.loc[first_valid]
+            if pd.notna(base) and base != 0:
+                seg = seg / base * 100.0
+        parts.append(seg)
+    out = pd.concat(parts).sort_index()
+    return out.reindex(s.index)
+
+def show_graph_development(history: pd.DataFrame, cash_div: pd.DataFrame):
+    if history.empty:
+        st.info("No historic portfolio data.")
+        return
+
+    # Ensure numeric columns
+    for c in ("value", "wv", "aex", "sp"):
+        if c in history.columns:
+            history[c] = pd.to_numeric(history[c], errors="coerce")
+
+    # ===== Absolute chart =====
+    hist_dates = _to_naive_series(history["date"])
+    hist_sorted = history.loc[hist_dates.index].copy()
+    hist_sorted["date"] = hist_dates
 
     fig = go.Figure()
+    fig.add_trace(go.Scatter(x=hist_sorted["date"], y=hist_sorted["value"], mode="lines", name="Portfolio (€)", line=dict(width=2)))
+    fig.add_trace(go.Scatter(x=hist_sorted["date"], y=hist_sorted["wv"],    mode="lines", name="Profit (W/V)",  line=dict(width=2, dash="dot")))
+    fig.add_trace(go.Scatter(x=hist_sorted["date"], y=hist_sorted["aex"],   mode="lines", name="AEX",           line=dict(width=1)))
+    fig.add_trace(go.Scatter(x=hist_sorted["date"], y=hist_sorted["sp"],    mode="lines", name="S&P 500",       line=dict(width=1, dash="dash")))
 
-    # Portfolio Value
-    fig.add_trace(go.Scatter(
-        x=history["date"], y=history["value"],
-        mode="lines", name="Portfolio (€)",
-        line=dict(width=2)
-    ))
+    # Deposits (align date range)
+    df_cash_sorted = pd.DataFrame()
+    if cash_div is not None and not cash_div.empty and "date" in cash_div.columns:
+        cash_dates = _to_naive_series(cash_div["date"])
+        df_cash_sorted = cash_div.loc[cash_dates.index].copy()
+        df_cash_sorted["date"] = cash_dates
+        if "cumulative_total" not in df_cash_sorted.columns:
+            # fallback if you only have 'amount'
+            if "amount" in df_cash_sorted.columns:
+                df_cash_sorted = df_cash_sorted.sort_values("date")
+                df_cash_sorted["cumulative_total"] = pd.to_numeric(df_cash_sorted["amount"], errors="coerce").fillna(0).cumsum()
+            else:
+                df_cash_sorted["cumulative_total"] = pd.Series(dtype=float)
 
-    # Profit (W/V)
-    fig.add_trace(go.Scatter(
-        x=history["date"], y=history["wv"],
-        mode="lines", name="Profit (W/V)",
-        line=dict(width=2, dash="dot")
-    ))
+        # same date window as history
+        start_dt, end_dt = hist_sorted["date"].min(), hist_sorted["date"].max()
+        df_cash_sorted = df_cash_sorted[(df_cash_sorted["date"] >= start_dt) & (df_cash_sorted["date"] <= end_dt)]
 
-    # AEX
-    fig.add_trace(go.Scatter(
-        x=history["date"], y=history["aex"],
-        mode="lines", name="AEX",
-        line=dict(width=1)
-    ))
-
-    # S&P
-    fig.add_trace(go.Scatter(
-        x=history["date"], y=history["sp"],
-        mode="lines", name="S&P 500",
-        line=dict(width=1, dash="dash")
-    ))
-
-    # Cumulative Deposits
-    fig.add_trace(go.Scatter(
-        x=cash_div["date"], y=cash_div["cumulative_total"],
-        mode="lines", name="Deposits (€)",
-        line=dict(width=1, dash="dot")
-    ))
+        fig.add_trace(go.Scatter(
+            x=df_cash_sorted["date"], y=df_cash_sorted["cumulative_total"],
+            mode="lines", name="Deposits (€)", line=dict(width=1, dash="dot")
+        ))
 
     fig.update_layout(
         title="📈 Historic Portfolio Overview",
         xaxis_title="Date",
         yaxis_title="EUR / Index Value",
         hovermode="x unified",
-        height=600)
-
+        height=600
+    )
     st.plotly_chart(fig, use_container_width=True)
 
-    # Now make an indexed plot
+    # ===== Indexed chart (rebased each year) =====
+    value_idx = _rebase_per_year(hist_sorted["value"], hist_sorted["date"])
+    wv_idx    = _rebase_per_year(hist_sorted["wv"],    hist_sorted["date"])
+    aex_idx   = _rebase_per_year(hist_sorted["aex"],   hist_sorted["date"])
+    sp_idx    = _rebase_per_year(hist_sorted["sp"],    hist_sorted["date"])
 
-    fig = go.Figure()
+    fig2 = go.Figure()
+    fig2.add_trace(go.Scatter(x=hist_sorted["date"], y=value_idx, mode="lines", name="Portfolio Indexed",    line=dict(width=2)))
+    fig2.add_trace(go.Scatter(x=hist_sorted["date"], y=wv_idx,    mode="lines", name="Profit (W/V) Indexed", line=dict(width=2, dash="dot")))
+    fig2.add_trace(go.Scatter(x=hist_sorted["date"], y=aex_idx,   mode="lines", name="AEX Indexed",          line=dict(width=1)))
+    fig2.add_trace(go.Scatter(x=hist_sorted["date"], y=sp_idx,    mode="lines", name="S&P 500 Indexed",      line=dict(width=1, dash="dash")))
 
-    fig.add_trace(go.Scatter(
-        x=history["date"], y=rebase(history["value"]),
-        mode="lines", name="Portfolio Indexed",
-        line=dict(width=2)
-    ))
+    if not df_cash_sorted.empty and df_cash_sorted["cumulative_total"].notna().any():
+        dep_idx = _rebase_per_year(df_cash_sorted["cumulative_total"], df_cash_sorted["date"])
+        fig2.add_trace(go.Scatter(x=df_cash_sorted["date"], y=dep_idx, mode="lines", name="Deposits Indexed", line=dict(width=1, dash="dot")))
 
-    fig.add_trace(go.Scatter(
-        x=history["date"], y=rebase(history["wv"]),
-        mode="lines", name="Profit (W/V) Indexed",
-        line=dict(width=2, dash="dot")
-    ))
-
-    fig.add_trace(go.Scatter(
-        x=history["date"], y=rebase(history["aex"]),
-        mode="lines", name="AEX Indexed",
-        line=dict(width=1)
-    ))
-
-    fig.add_trace(go.Scatter(
-        x=history["date"], y=rebase(history["sp"]),
-        mode="lines", name="S&P 500 Indexed",
-        line=dict(width=1, dash="dash")
-    ))
-
-    fig.add_trace(go.Scatter(
-        x=df_cash_sorted["date"], y=rebase(df_cash_sorted["cumulative_total"]),
-        mode="lines", name="Deposits Indexed",
-        line=dict(width=1, dash="dot")
-    ))
-
-    fig.update_layout(
-        title="📊 Indexed Performance (rebased to 100)",
+    fig2.update_layout(
+        title="📊 Indexed Performance (rebased to 100 each year)",
         xaxis_title="Date",
-        yaxis_title="Index Value (Start = 100)",
+        yaxis_title="Index Value (Start of Year = 100)",
         hovermode="x unified",
         height=600
     )
-    print('success')
-
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig2, use_container_width=True)
